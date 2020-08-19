@@ -14,7 +14,6 @@ dynamo = boto3.client("dynamodb")
 sqs = boto3.client("sqs")
 
 
-# Generic
 def setup():
     state = uuid.uuid4()
     # Persist state to DynamoDB with 10 min TTL
@@ -23,7 +22,6 @@ def setup():
         "action": "redirect",
         "url": f"{base_url}?client_id={client_id}&scope={scope}&state={state}",
     }
-
 
 def onboard(code, state):
     # Get state from DynamoDB
@@ -36,19 +34,11 @@ def onboard(code, state):
     # Submit SQS event for game bots to reconfigure
     pass
 
-
-
-# Lambda Hander
-def handler(event, context):
+def lambda_handler(event, context):
     pass
 
-
-
-# CLI Handler
-def main():
+def cli_handler():
     pass
-
-
 
 if __name__ == "__main__":
-    main()
+    cli_handler()

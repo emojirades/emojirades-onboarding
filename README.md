@@ -10,6 +10,15 @@ Works over CLI or through AWS Lambda
 
 ```
 
+## Building Lambda
+```bash
+docker build -t emojirades_onboarding:latest .
+
+# Copy the package out to your system
+docker run -v "${PWD}/release:/opt/mount" --rm --entrypoint cp emojirades_onboarding:latest /src/function.zip /opt/mount/
+
+# Copy the package into S3 or similar to run
+```
 
 
 ## How it works
