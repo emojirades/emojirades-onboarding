@@ -1,22 +1,44 @@
 #!/usr/bin/env python3
 
+import datetime
 import boto3
+import time
 import uuid
 import os
-
-
-base_url = os.environ.get("BASE_URL", "https://slack.com/oauth/authorize")
-client_id = os.environ["CLIENT_ID"]
-scope = os.environ["SCOPE"]
 
 
 dynamo = boto3.client("dynamodb")
 sqs = boto3.client("sqs")
 
 
-def setup():
-    state = uuid.uuid4()
-    # Persist state to DynamoDB with 10 min TTL
+# Required env vars
+environment = os.environ["ENVIRONMENT"]
+client_id = os.environ["CLIENT_ID"]
+client_secret = os.environ["CLIENT_SECRET"]
+scope = os.environ["SCOPE"]
+state_table = os.environ["STATE_TABLE"]
+
+# Optional env vars
+base_url = os.environ.get("BASE_URL", "https://slack.com/oauth/authorize")
+state_ttl_delta = int(os.environ.get("STATE_TTL_DELTA", "300"))
+
+
+
+
+def initiate():
+    state_key = str(uuid.uuid4())
+    state_ttl = datetime.datetime.now().timestamp() + state_ttl_delta
+
+    response = dynamo.put_item(
+        TableName=state_table,
+        Item={
+            "StateKey": {"S": state_key},
+            "StateTTL": {"N": state_ttl},
+        },
+        ReturnValues="NONE",
+        ReturnConsumedCapacity="NONE",
+        ReturnItemCollectionMetrics="NONE",
+    )
 
     return {
         "action": "redirect",
