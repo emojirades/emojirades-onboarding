@@ -8,13 +8,13 @@ COPY requirements.txt .
 COPY src code/
 
 # Build dependencies into zip
-WORKDIR /src/package
-RUN pip3 install --upgrade --no-cache-dir -r ../requirements.txt --target .
-RUN zip --quiet -r9 ../function.zip .
+#WORKDIR /src/package
+#RUN pip3 install --upgrade --no-cache-dir -r ../requirements.txt --target .
+#RUN zip --quiet -r9 ../function.zip .
 
 # Build source into zip
 WORKDIR /src/code
-RUN zip -g -r ../function.zip *
+RUN zip --quiet -g -r ../function.zip *
 
 WORKDIR /src
 CMD ["bash"]
