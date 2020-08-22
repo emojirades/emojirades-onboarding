@@ -118,7 +118,7 @@ def onboard(code, state_key):
 
     # Remove our state_key to stop any replays
     # Once the 'post' is sent, the code is considered invalid
-    response = dynamo.delete_item(
+    dynamo.delete_item(
         TableName=state_table,
         Key={
             "StateKey": {"S": state_key},
