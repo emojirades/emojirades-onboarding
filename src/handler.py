@@ -31,9 +31,9 @@ client_secret = secret["CLIENT_SECRET"]
 scope = secret["SCOPE"]
 
 
-def initiate():
+def initiate(epoch_seconds):
     state_key = str(uuid.uuid4())
-    state_ttl = datetime.datetime.now().timestamp() + state_ttl_delta
+    state_ttl = epoch_seconds + state_ttl_delta
 
     response = dynamo.put_item(
         TableName=state_table,
@@ -106,7 +106,7 @@ def lambda_handler(event, context):
             "isBase64Encoded": False,
             "statusCode": 302,
             "headers": {
-                "Location": "/initiate",
+                "Location": "https://emojirades.io",
             }
         }
 
