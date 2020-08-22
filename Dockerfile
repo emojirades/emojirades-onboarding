@@ -10,7 +10,7 @@ RUN zip --quiet -r9 ../function.zip .
 
 # Build source into zip
 WORKDIR /src/code
-COPY src code/
+COPY src .
 RUN zip --quiet -g -r ../function.zip *
 
 WORKDIR /src

@@ -116,10 +116,11 @@ def onboard(code, state_key):
         }
     )
 
-    if response.status_code != response.requests.codes.ok:
+    if response.status_code != requests.codes.ok:
         return build_message_response("Provided Slack credentials are invalid")
 
     output = response.json()
+    print(output)
 
     if not output or not output.get("ok"):
         return build_message_response("Slack response wasn't valid")
@@ -128,10 +129,10 @@ def onboard(code, state_key):
         return build_message_response("Slack response missing the bot scope")
 
     # Persist auth tokens to S3
+    team_id = output["team_id"]
     team_name = output["team_name"]
 
     auth_document = {
-        "team_id": output["team_id"],
         "access_token": output["access_token"],
         "bot_user_id": output["bot"]["bot_user_id"],
         "bot_access_token": output["bot"]["bot_access_token"],
