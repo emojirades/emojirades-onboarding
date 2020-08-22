@@ -27,7 +27,7 @@ queue_url = os.environ["QUEUE_URL"]
 base_auth_url = os.environ.get("BASE_AUTH_URL", "https://slack.com/oauth/authorize")
 base_access_url = os.environ.get("BASE_ACCESS_URL", "https://slack.com/api/oauth.access")
 state_ttl_delta = int(os.environ.get("STATE_TTL_DELTA", "300"))
-auth_bucket_key = os.environ.get("AUTH_BUCKET_KEY", "teams/{team_id}/auth.json")
+auth_bucket_key = os.environ.get("AUTH_BUCKET_KEY", "workspaces/{workspace_id}/auth.json")
 
 # Get secret config
 secret = json.loads(secrets.get_secret_value(SecretId=secret_arn)["SecretString"])
@@ -140,7 +140,7 @@ def onboard(code, state_key):
         return build_message_response("Slack response missing the bot scope")
 
     # Persist auth tokens to S3
-    team_id = output["team_id"]
+    workspace_id = output["team_id"]
     team_name = output["team_name"]
 
     auth_document = {
@@ -153,13 +153,13 @@ def onboard(code, state_key):
         Body=json.dumps(auth_document),
         Bucket=auth_bucket,
         ContentType="application/json",
-        Key=auth_bucket_key.format(team_id=team_id),
+        Key=auth_bucket_key.format(workspace_id=workspace_id),
     )
 
     # Submit SQS event for game bot(s) to reconfigure
     sqs.send_message(
         QueueUrl=queue_url,
-        MessageBody=json.dumps({"team_id": team_id}),
+        MessageBody=json.dumps({"workspace_id": workspace_id}),
     )
 
 
