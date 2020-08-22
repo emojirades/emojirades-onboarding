@@ -116,11 +116,22 @@ def onboard(code, state_key):
         }
     )
 
+    # Remove our state_key to stop any replays
+    # Once the 'post' is sent, the code is considered invalid
+    response = dynamo.delete_item(
+        TableName=state_table,
+        Key={
+            "StateKey": {"S": state_key},
+        },
+        ReturnValues="NONE",
+        ReturnConsumedCapacity="NONE",
+        ReturnItemCollectionMetrics="NONE",
+    )
+
     if response.status_code != requests.codes.ok:
         return build_message_response("Provided Slack credentials are invalid")
 
     output = response.json()
-    print(output)
 
     if not output or not output.get("ok"):
         return build_message_response("Slack response wasn't valid")
@@ -151,16 +162,6 @@ def onboard(code, state_key):
         MessageBody=json.dumps({"team_id": team_id}),
     )
 
-    # Remove our state_key to stop any replays
-    response = dynamo.delete_item(
-        TableName=state_table,
-        Key={
-            "StateKey": {"S": state_key},
-        },
-        ReturnValues="NONE",
-        ReturnConsumedCapacity="NONE",
-        ReturnItemCollectionMetrics="NONE",
-    )
 
     # Let the user know they're good to go
     return build_message_response(f"Successfully onboarded {team_name} to Emojirades!")
