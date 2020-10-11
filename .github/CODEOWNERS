@@ -1,0 +1,7 @@
+# Platform Catchall
+*                    @emojirades/platform
+
+# Developer Team
+/src/                @emojirades/developers
+requirements.txt     @emojirades/developers
+requirements-dev.txt @emojirades/developers
