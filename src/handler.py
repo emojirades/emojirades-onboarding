@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from functools import lru_cache
+
 import requests
 import datetime
 import boto3
@@ -9,16 +11,9 @@ import uuid
 import os
 
 
-# Boto3 clients
-dynamo = boto3.client("dynamodb")
-sqs = boto3.client("sqs")
-s3 = boto3.client("s3")
-secrets = boto3.client("secretsmanager")
-
-
 # Required env vars
 environment = os.environ["ENVIRONMENT"]
-secret_arn = os.environ["SECRET_ARN"]
+secret_name = os.environ["SECRET_NAME"]
 state_table = os.environ["STATE_TABLE"]
 auth_bucket = os.environ["AUTH_BUCKET"]
 queue_url = os.environ["QUEUE_URL"]
@@ -29,12 +24,17 @@ base_access_url = os.environ.get("BASE_ACCESS_URL", "https://slack.com/api/oauth
 state_ttl_delta = int(os.environ.get("STATE_TTL_DELTA", "300"))
 auth_bucket_key = os.environ.get("AUTH_BUCKET_KEY", "workspaces/{workspace_id}/auth.json")
 
-# Get secret config
-secret = json.loads(secrets.get_secret_value(SecretId=secret_arn)["SecretString"])
 
-client_id = secret["CLIENT_ID"]
-client_secret = secret["CLIENT_SECRET"]
-scope = secret["SCOPE"]
+@lru_cache()
+def get_slack_config(slack_secret_name):
+    secrets = boto3.client("secretsmanager")
+    secret = json.loads(secrets.get_secret_value(SecretId=slack_secret_name)["SecretString"])
+
+    return {
+        "client_id": secret["CLIENT_ID"],
+        "client_secret": secret["CLIENT_SECRET"],
+        "scope": secret["SCOPE"],
+    }
 
 
 def build_response(status_code=200, headers=None, body=None):
@@ -77,6 +77,8 @@ def build_message_response(message, **kwargs):
 
 
 def initiate(epoch_seconds):
+    dynamo = boto3.client("dynamodb")
+
     state_key = str(uuid.uuid4())
     state_ttl = str(epoch_seconds + state_ttl_delta)
 
@@ -91,9 +93,21 @@ def initiate(epoch_seconds):
         ReturnItemCollectionMetrics="NONE",
     )
 
-    return build_redirect_response(f"{base_auth_url}?client_id={client_id}&scope={scope}&state={state_key}")
+    slack_config = get_slack_config(secret_name)
+
+    return build_redirect_response(
+        "{base_auth_url}?client_id={client_id}&scope={scope}&state={state_key}".format(
+            base_auth_url=base_auth_url,
+            state_key=state_key,
+            **slack_config,
+        )
+    )
 
 def onboard(code, state_key):
+    dynamo = boto3.client("dynamodb")
+    sqs = boto3.client("sqs")
+    s3 = boto3.client("s3")
+
     # Verify that the state_key is still within the DynamoDB table
     response = dynamo.get_item(
         TableName=state_table,
@@ -106,12 +120,14 @@ def onboard(code, state_key):
     if "Item" not in response:
         return build_message_response("Onboarding flow has timed out, please authenticate again", status_code=400)
 
+    slack_config = get_slack_config(secret_name)
+
     # Use code to retrieve auth creds
     response = requests.post(
         base_access_url,
         data={
-            "client_id": client_id,
-            "client_secret": client_secret,
+            "client_id": slack_config["client_id"],
+            "client_secret": slack_config["client_secret"],
             "code": code,
         }
     )
