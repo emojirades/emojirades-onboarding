@@ -1,9 +1,21 @@
 import os
 import json
+import time
+import uuid
 import boto3
+import requests
 
 from moto import mock_dynamodb2, mock_sqs, mock_s3, mock_secretsmanager
-from unittest.mock import Mock, patch
+from unittest.mock import patch
+
+environment = "dev"
+region = "ap-southeast-2"
+account_id = "123456789012"
+
+state_table = f"emo-{environment}-onboarding"
+secret_name = f"emo-{environment}-onboarding"
+bucket_name = f"emojirades-{environment}"
+queue_name = f"emo-{environment}-onboarding-service"
 
 slack_config = {
     "CLIENT_ID": 123,
@@ -11,23 +23,22 @@ slack_config = {
     "SCOPE": "bot",
 }
 
+environment_config = {
+    "ENVIRONMENT": environment,
+    "SECRET_NAME": secret_name,
+    "STATE_TABLE": state_table,
+    "AUTH_BUCKET": bucket_name,
+    "QUEUE_URL": f"https://sqs.{region}.amazonaws.com/{account_id}/{queue_name}",
+    "AWS_DEFAULT_REGION": region,
+}
 
-@mock_dynamodb2
-@mock_sqs
-@mock_s3
-@mock_secretsmanager
-def test_initiate():
-    # Setup
-    os.environ["ENVIRONMENT"] = "dev"
-    os.environ["SECRET_NAME"] = "emo-dev-onboarding"
-    os.environ["STATE_TABLE"] = "emo-dev-onboarding"
-    os.environ["AUTH_BUCKET"] = "emojirades"
-    os.environ["QUEUE_URL"] = "https://sqs.ap-southeast-2.amazonaws.com/12345678910/emo-dev-onboarding-service"
-    os.environ["AWS_DEFAULT_REGION"] = "ap-southeast-2"
+
+def setup_environment(state_key=None, state_ttl=None):
+    os.environ.update(environment_config)
 
     dynamo = boto3.client("dynamodb")
     dynamo.create_table(
-        TableName="emo-dev-onboarding",
+        TableName=state_table,
         AttributeDefinitions=[
             {
                 "AttributeName": "StateKey",
@@ -41,19 +52,48 @@ def test_initiate():
             },
         ],
     )
-
-    secrets = boto3.client("secretsmanager")
-    secrets.create_secret(
-        Name="emo-dev-onboarding",
-        SecretString=json.dumps(slack_config),
+    dynamo.update_time_to_live(
+        TableName=state_table,
+        TimeToLiveSpecification={
+          "Enabled": True,
+          "AttributeName": "StateTTL"
+        }
     )
 
-    # Run the handler
+    if state_key is not None and state_ttl is not None:
+        dynamo.put_item(
+            TableName=state_table,
+            Item={
+                "StateKey": {"S": state_key},
+                "StateTTL": {"N": state_ttl},
+            },
+        )
+
+    secrets = boto3.client("secretsmanager")
+    secrets.create_secret(Name=secret_name, SecretString=json.dumps(slack_config))
+
+    s3 = boto3.client("s3")
+    s3.create_bucket(Bucket=bucket_name, CreateBucketConfiguration={"LocationConstraint": region})
+
+    sqs = boto3.client("sqs")
+    sqs.create_queue(QueueName=queue_name)
+
+
+@mock_dynamodb2
+@mock_sqs
+@mock_s3
+@mock_secretsmanager
+def test_initiate():
+    setup_environment()
+
+    epoch_seconds = int(time.time())
+
     import handler
-    response = handler.initiate(1602392178)
+    response = handler.initiate(epoch_seconds)
 
     # Get the state item handler created
-    items = dynamo.scan(TableName="emo-dev-onboarding").get("Items", [])
+    dynamo = boto3.client("dynamodb")
+    items = dynamo.scan(TableName=state_table).get("Items", [])
     assert len(items) == 1
 
     state = items[0]
@@ -69,6 +109,65 @@ def test_initiate():
 @mock_sqs
 @mock_s3
 @mock_secretsmanager
-@patch('handler.onboard.requests.post')
 def test_onboard():
-    pass
+    state_key = str(uuid.uuid4())
+    epoch_seconds = int(time.time())
+    state_ttl = str(epoch_seconds + 60)
+
+    setup_environment(state_key=state_key, state_ttl=state_ttl)
+
+    code = "abc123"
+
+    slack_data = {
+        "ok": True,
+        "team_id": "ABC123",
+        "team_name": "Team ABC123",
+        "access_token": "xoxo-abab123-12345678910",
+        "bot": {
+            "bot_user_id": "B001122",
+            "bot_access_token": "xoxb-abab123-12345678910",
+        },
+    }
+
+    class FakeSlackResponse:
+        status_code = requests.codes.ok
+
+        @staticmethod
+        def json():
+            return slack_data
+
+    import handler
+
+    with patch('handler.requests.post') as patched:
+        patched.return_value = FakeSlackResponse()
+        response = handler.onboard(code, state_key)
+
+    # Validate the response
+    assert not response["isBase64Encoded"]
+    assert response["statusCode"] == 200
+    assert response["headers"]["Content-Type"] == "application/json"
+    assert response["body"] == f'{{"message": "Successfully onboarded {slack_data["team_name"]} to Emojirades!"}}'
+
+    # Validate the S3 file
+    s3 = boto3.client("s3")
+    response = s3.get_object(Bucket=bucket_name, Key=f"workspaces/{slack_data['team_id']}/auth.json")
+    body = json.load(response["Body"])
+
+    assert body["access_token"] == slack_data["access_token"]
+    assert body["bot_user_id"] == slack_data["bot"]["bot_user_id"]
+    assert body["bot_access_token"] == slack_data["bot"]["bot_access_token"]
+
+    # Validate the SQS message
+    sqs = boto3.client("sqs")
+    response = sqs.receive_message(
+        QueueUrl=environment_config["QUEUE_URL"],
+        MaxNumberOfMessages=1
+    )
+
+    messages = response.get("Messages", [])
+
+    assert len(messages) == 1
+    message = messages[0]
+
+    body = json.loads(message["Body"])
+    assert body["workspace_id"] == slack_data["team_id"]
