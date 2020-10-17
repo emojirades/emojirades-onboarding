@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from collections import defaultdict
 from functools import lru_cache
 
 import requests
@@ -9,20 +10,29 @@ import json
 import time
 import uuid
 import os
+import re
 
 
 # Required env vars
 environment = os.environ["ENVIRONMENT"]
 secret_name = os.environ["SECRET_NAME"]
 state_table = os.environ["STATE_TABLE"]
-auth_bucket = os.environ["AUTH_BUCKET"]
-queue_url = os.environ["QUEUE_URL"]
+config_bucket = os.environ["CONFIG_BUCKET"]
+queue_prefix = os.environ["QUEUE_PREFIX"]
+shard_limit = int(os.environ["SHARD_LIMIT"])
+alert_queue_url = os.environ["ALERT_QUEUE_URL"]
 
 # Optional env vars
 base_auth_url = os.environ.get("BASE_AUTH_URL", "https://slack.com/oauth/authorize")
 base_access_url = os.environ.get("BASE_ACCESS_URL", "https://slack.com/api/oauth.access")
 state_ttl_delta = int(os.environ.get("STATE_TTL_DELTA", "300"))
-auth_bucket_key = os.environ.get("AUTH_BUCKET_KEY", "workspaces/{workspace_id}/auth.json")
+
+shards_dir = os.environ.get("SHARDS_DIR", "workspaces/shards")
+shards_dir_format = re.compile(f"{re.escape(shards_dir)}\/(?P<shard>[0-9]+)\/.+")
+
+score_file_key = os.environ.get("AUTH_BUCKET_KEY", "workspaces/directory/{workspace_id}/score.json")
+state_file_key = os.environ.get("AUTH_BUCKET_KEY", "workspaces/directory/{workspace_id}/state.json")
+auth_file_key = os.environ.get("AUTH_BUCKET_KEY", "workspaces/directory/{workspace_id}/auth.json")
 
 
 @lru_cache()
@@ -145,20 +155,78 @@ def onboard(code, state_key):
     )
 
     if response.status_code != requests.codes.ok:
-        return build_message_response("Provided Slack credentials are invalid")
+        return build_message_response("Provided Slack credentials are invalid", status_code=500)
 
     output = response.json()
 
     if not output or not output.get("ok"):
-        return build_message_response("Slack response wasn't valid")
+        return build_message_response("Slack response wasn't valid", status_code=500)
 
     if "bot" not in output:
-        return build_message_response("Slack response missing the bot scope")
+        return build_message_response("Slack response missing the bot scope", status_code=500)
 
-    # Persist auth tokens to S3
     workspace_id = output["team_id"]
     team_name = output["team_name"]
 
+    # Allocate a shard
+    # Loop through each shard
+    paginator = s3.get_paginator("list_objects_v2")
+
+    response_iterator = paginator.paginate(
+        Bucket=config_bucket,
+        Prefix=shards_dir,
+    )
+
+    shard_counter = defaultdict(int)
+
+    for i, response in enumerate(response_iterator):
+        if "Contents" not in response:
+            if i == 0:
+                shard_counter[0] = 0
+
+            break
+
+        for content in response["Contents"]:
+            result = re.match(shards_dir_format, content["Key"])
+
+            if not result:
+                continue
+
+            shard = result.groupdict()["shard"]
+            shard_counter[shard] += 1
+
+    for shard, load in shard_counter.items():
+        if load < shard_limit:
+            allocated_shard = shard
+            break
+    else:
+        sqs.send_message(
+            QueueUrl=alert_queue_url,
+            MessageBody=json.dumps({"message": "Shards are currently oversubscribed"}),
+        )
+
+        return build_message_response("Emojirades is currently oversubscribed, please try again later, sorry!")
+
+    workspace_score_file_key = score_file_key.format(workspace_id=workspace_id)
+    workspace_state_file_key = state_file_key.format(workspace_id=workspace_id)
+    workspace_auth_file_key = auth_file_key.format(workspace_id=workspace_id)
+
+    # Allocate this workspace to the shard
+    workspace_config = {
+        "workspace_id": workspace_id,
+        "score_file": f"s3://{config_bucket}/{workspace_score_file_key}",
+        "state_file": f"s3://{config_bucket}/{workspace_state_file_key}",
+        "auth_file": f"s3://{config_bucket}/{workspace_auth_file_key}",
+    }
+
+    s3.put_object(
+        Body=json.dumps(workspace_config),
+        Bucket=config_bucket,
+        ContentType="application/json",
+        Key=f"{shards_dir}/{allocated_shard}/{workspace_id}.json",
+    )
+
+    # Persist auth tokens to S3
     auth_document = {
         "access_token": output["access_token"],
         "bot_user_id": output["bot"]["bot_user_id"],
@@ -167,17 +235,18 @@ def onboard(code, state_key):
 
     s3.put_object(
         Body=json.dumps(auth_document),
-        Bucket=auth_bucket,
+        Bucket=config_bucket,
         ContentType="application/json",
-        Key=auth_bucket_key.format(workspace_id=workspace_id),
+        Key=auth_file_key.format(workspace_id=workspace_id),
     )
 
     # Submit SQS event for game bot(s) to reconfigure
+    response = sqs.get_queue_url(QueueName=f"{queue_prefix}{allocated_shard}")
+
     sqs.send_message(
-        QueueUrl=queue_url,
+        QueueUrl=response["QueueUrl"],
         MessageBody=json.dumps({"workspace_id": workspace_id}),
     )
-
 
     # Let the user know they're good to go
     return build_message_response(f"Successfully onboarded {team_name} to Emojirades!")

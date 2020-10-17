@@ -11,11 +11,13 @@ from unittest.mock import patch
 environment = "dev"
 region = "ap-southeast-2"
 account_id = "123456789012"
+shard_count = 1
 
 state_table = f"emo-{environment}-onboarding"
 secret_name = f"emo-{environment}-onboarding"
 bucket_name = f"emojirades-{environment}"
-queue_name = f"emo-{environment}-onboarding-service"
+queue_prefix = f"emo-{environment}-onboarding-service-"
+alert_queue = f"emo-{environment}-onboarding-service-alerts"
 
 slack_config = {
     "CLIENT_ID": 123,
@@ -27,8 +29,10 @@ environment_config = {
     "ENVIRONMENT": environment,
     "SECRET_NAME": secret_name,
     "STATE_TABLE": state_table,
-    "AUTH_BUCKET": bucket_name,
-    "QUEUE_URL": f"https://sqs.{region}.amazonaws.com/{account_id}/{queue_name}",
+    "CONFIG_BUCKET": bucket_name,
+    "QUEUE_PREFIX": queue_prefix,
+    "SHARD_LIMIT": "5",
+    "ALERT_QUEUE_URL": f"https://sqs.{region}.amazonaws.com/{account_id}/{alert_queue}",
     "AWS_DEFAULT_REGION": region,
 }
 
@@ -76,8 +80,11 @@ def setup_environment(state_key=None, state_ttl=None):
     s3.create_bucket(Bucket=bucket_name, CreateBucketConfiguration={"LocationConstraint": region})
 
     sqs = boto3.client("sqs")
-    sqs.create_queue(QueueName=queue_name)
 
+    for shard_id in range(0, shard_count):
+        sqs.create_queue(QueueName=f"{queue_prefix}{shard_id}")
+
+    sqs.create_queue(QueueName=alert_queue)
 
 @mock_dynamodb2
 @mock_sqs
@@ -114,6 +121,8 @@ def test_onboard():
     epoch_seconds = int(time.time())
     state_ttl = str(epoch_seconds + 60)
 
+    allocated_shard = 0
+
     setup_environment(state_key=state_key, state_ttl=state_ttl)
 
     code = "abc123"
@@ -148,9 +157,18 @@ def test_onboard():
     assert response["headers"]["Content-Type"] == "application/json"
     assert response["body"] == f'{{"message": "Successfully onboarded {slack_data["team_name"]} to Emojirades!"}}'
 
-    # Validate the S3 file
+    # Validate team was allocated to the correct shard
     s3 = boto3.client("s3")
-    response = s3.get_object(Bucket=bucket_name, Key=f"workspaces/{slack_data['team_id']}/auth.json")
+    response = s3.get_object(Bucket=bucket_name, Key=f"workspaces/shards/{allocated_shard}/{slack_data['team_id']}.json")
+    body = json.load(response["Body"])
+
+    assert body["workspace_id"] == slack_data["team_id"]
+    assert body["score_file"] == f"s3://{bucket_name}/workspaces/directory/{slack_data['team_id']}/score.json"
+    assert body["state_file"] == f"s3://{bucket_name}/workspaces/directory/{slack_data['team_id']}/state.json"
+    assert body["auth_file"] == f"s3://{bucket_name}/workspaces/directory/{slack_data['team_id']}/auth.json"
+
+    # Validate the auth.json file was created
+    response = s3.get_object(Bucket=bucket_name, Key=f"workspaces/directory/{slack_data['team_id']}/auth.json")
     body = json.load(response["Body"])
 
     assert body["access_token"] == slack_data["access_token"]
@@ -159,8 +177,11 @@ def test_onboard():
 
     # Validate the SQS message
     sqs = boto3.client("sqs")
+
+    response = sqs.get_queue_url(QueueName=f"{environment_config['QUEUE_PREFIX']}{allocated_shard}")
+
     response = sqs.receive_message(
-        QueueUrl=environment_config["QUEUE_URL"],
+        QueueUrl=response["QueueUrl"],
         MaxNumberOfMessages=1
     )
 
