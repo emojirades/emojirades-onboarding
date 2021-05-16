@@ -8,6 +8,8 @@ Works over CLI or through AWS Lambda
 ```bash
 # Running over CLI
 
+# Runnings tests
+cd src; pytest
 ```
 
 ## Building Lambda

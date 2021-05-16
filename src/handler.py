@@ -24,21 +24,31 @@ alert_queue_url = os.environ["ALERT_QUEUE_URL"]
 
 # Optional env vars
 base_auth_url = os.environ.get("BASE_AUTH_URL", "https://slack.com/oauth/authorize")
-base_access_url = os.environ.get("BASE_ACCESS_URL", "https://slack.com/api/oauth.access")
+base_access_url = os.environ.get(
+    "BASE_ACCESS_URL", "https://slack.com/api/oauth.access"
+)
 state_ttl_delta = int(os.environ.get("STATE_TTL_DELTA", "300"))
 
 shards_dir = os.environ.get("SHARDS_DIR", "workspaces/shards")
 shards_dir_format = re.compile(f"{re.escape(shards_dir)}\/(?P<shard>[0-9]+)\/.+")
 
-score_file_key = os.environ.get("AUTH_BUCKET_KEY", "workspaces/directory/{workspace_id}/score.json")
-state_file_key = os.environ.get("AUTH_BUCKET_KEY", "workspaces/directory/{workspace_id}/state.json")
-auth_file_key = os.environ.get("AUTH_BUCKET_KEY", "workspaces/directory/{workspace_id}/auth.json")
+score_file_key = os.environ.get(
+    "AUTH_BUCKET_KEY", "workspaces/directory/{workspace_id}/score.json"
+)
+state_file_key = os.environ.get(
+    "AUTH_BUCKET_KEY", "workspaces/directory/{workspace_id}/state.json"
+)
+auth_file_key = os.environ.get(
+    "AUTH_BUCKET_KEY", "workspaces/directory/{workspace_id}/auth.json"
+)
 
 
 @lru_cache()
 def get_slack_config(slack_secret_name):
     secrets = boto3.client("secretsmanager")
-    secret = json.loads(secrets.get_secret_value(SecretId=slack_secret_name)["SecretString"])
+    secret = json.loads(
+        secrets.get_secret_value(SecretId=slack_secret_name)["SecretString"]
+    )
 
     return {
         "client_id": secret["CLIENT_ID"],
@@ -113,6 +123,7 @@ def initiate(epoch_seconds):
         )
     )
 
+
 def onboard(code, state_key):
     dynamo = boto3.client("dynamodb")
     sqs = boto3.client("sqs")
@@ -128,7 +139,9 @@ def onboard(code, state_key):
     )
 
     if "Item" not in response:
-        return build_message_response("Onboarding flow has timed out, please authenticate again", status_code=400)
+        return build_message_response(
+            "Onboarding flow has timed out, please authenticate again", status_code=400
+        )
 
     slack_config = get_slack_config(secret_name)
 
@@ -139,7 +152,7 @@ def onboard(code, state_key):
             "client_id": slack_config["client_id"],
             "client_secret": slack_config["client_secret"],
             "code": code,
-        }
+        },
     )
 
     # Remove our state_key to stop any replays
@@ -155,7 +168,9 @@ def onboard(code, state_key):
     )
 
     if response.status_code != requests.codes.ok:
-        return build_message_response("Provided Slack credentials are invalid", status_code=500)
+        return build_message_response(
+            "Provided Slack credentials are invalid", status_code=500
+        )
 
     output = response.json()
 
@@ -163,7 +178,9 @@ def onboard(code, state_key):
         return build_message_response("Slack response wasn't valid", status_code=500)
 
     if "bot" not in output:
-        return build_message_response("Slack response missing the bot scope", status_code=500)
+        return build_message_response(
+            "Slack response missing the bot scope", status_code=500
+        )
 
     workspace_id = output["team_id"]
     team_name = output["team_name"]
@@ -205,7 +222,9 @@ def onboard(code, state_key):
             MessageBody=json.dumps({"message": "Shards are currently oversubscribed"}),
         )
 
-        return build_message_response("Emojirades is currently oversubscribed, please try again later, sorry!")
+        return build_message_response(
+            "Emojirades is currently oversubscribed, please try again later, sorry!"
+        )
 
     workspace_score_file_key = score_file_key.format(workspace_id=workspace_id)
     workspace_state_file_key = state_file_key.format(workspace_id=workspace_id)

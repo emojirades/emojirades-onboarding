@@ -58,10 +58,7 @@ def setup_environment(state_key=None, state_ttl=None):
     )
     dynamo.update_time_to_live(
         TableName=state_table,
-        TimeToLiveSpecification={
-          "Enabled": True,
-          "AttributeName": "StateTTL"
-        }
+        TimeToLiveSpecification={"Enabled": True, "AttributeName": "StateTTL"},
     )
 
     if state_key is not None and state_ttl is not None:
@@ -77,7 +74,9 @@ def setup_environment(state_key=None, state_ttl=None):
     secrets.create_secret(Name=secret_name, SecretString=json.dumps(slack_config))
 
     s3 = boto3.client("s3")
-    s3.create_bucket(Bucket=bucket_name, CreateBucketConfiguration={"LocationConstraint": region})
+    s3.create_bucket(
+        Bucket=bucket_name, CreateBucketConfiguration={"LocationConstraint": region}
+    )
 
     sqs = boto3.client("sqs")
 
@@ -85,6 +84,7 @@ def setup_environment(state_key=None, state_ttl=None):
         sqs.create_queue(QueueName=f"{queue_prefix}{shard_id}")
 
     sqs.create_queue(QueueName=alert_queue)
+
 
 @mock_dynamodb2
 @mock_sqs
@@ -96,6 +96,7 @@ def test_initiate():
     epoch_seconds = int(time.time())
 
     import handler
+
     response = handler.initiate(epoch_seconds)
 
     # Get the state item handler created
@@ -109,8 +110,12 @@ def test_initiate():
     # Assert the handler response is valid
     assert not response["isBase64Encoded"]
     assert response["statusCode"] == 302
-    assert response["headers"]["Location"] == f"https://slack.com/oauth/authorize?client_id={slack_config['CLIENT_ID']}&scope={slack_config['SCOPE']}&state={state_key}"
+    assert (
+        response["headers"]["Location"]
+        == f"https://slack.com/oauth/authorize?client_id={slack_config['CLIENT_ID']}&scope={slack_config['SCOPE']}&state={state_key}"
+    )
     assert response["headers"]["Referrer-Policy"] == "no-referrer"
+
 
 @mock_dynamodb2
 @mock_sqs
@@ -147,7 +152,7 @@ def test_onboard():
 
     import handler
 
-    with patch('handler.requests.post') as patched:
+    with patch("handler.requests.post") as patched:
         patched.return_value = FakeSlackResponse()
         response = handler.onboard(code, state_key)
 
@@ -155,20 +160,38 @@ def test_onboard():
     assert not response["isBase64Encoded"]
     assert response["statusCode"] == 200
     assert response["headers"]["Content-Type"] == "application/json"
-    assert response["body"] == f'{{"message": "Successfully onboarded {slack_data["team_name"]} to Emojirades!"}}'
+    assert (
+        response["body"]
+        == f'{{"message": "Successfully onboarded {slack_data["team_name"]} to Emojirades!"}}'
+    )
 
     # Validate team was allocated to the correct shard
     s3 = boto3.client("s3")
-    response = s3.get_object(Bucket=bucket_name, Key=f"workspaces/shards/{allocated_shard}/{slack_data['team_id']}.json")
+    response = s3.get_object(
+        Bucket=bucket_name,
+        Key=f"workspaces/shards/{allocated_shard}/{slack_data['team_id']}.json",
+    )
     body = json.load(response["Body"])
 
     assert body["workspace_id"] == slack_data["team_id"]
-    assert body["score_file"] == f"s3://{bucket_name}/workspaces/directory/{slack_data['team_id']}/score.json"
-    assert body["state_file"] == f"s3://{bucket_name}/workspaces/directory/{slack_data['team_id']}/state.json"
-    assert body["auth_file"] == f"s3://{bucket_name}/workspaces/directory/{slack_data['team_id']}/auth.json"
+    assert (
+        body["score_file"]
+        == f"s3://{bucket_name}/workspaces/directory/{slack_data['team_id']}/score.json"
+    )
+    assert (
+        body["state_file"]
+        == f"s3://{bucket_name}/workspaces/directory/{slack_data['team_id']}/state.json"
+    )
+    assert (
+        body["auth_file"]
+        == f"s3://{bucket_name}/workspaces/directory/{slack_data['team_id']}/auth.json"
+    )
 
     # Validate the auth.json file was created
-    response = s3.get_object(Bucket=bucket_name, Key=f"workspaces/directory/{slack_data['team_id']}/auth.json")
+    response = s3.get_object(
+        Bucket=bucket_name,
+        Key=f"workspaces/directory/{slack_data['team_id']}/auth.json",
+    )
     body = json.load(response["Body"])
 
     assert body["access_token"] == slack_data["access_token"]
@@ -178,12 +201,11 @@ def test_onboard():
     # Validate the SQS message
     sqs = boto3.client("sqs")
 
-    response = sqs.get_queue_url(QueueName=f"{environment_config['QUEUE_PREFIX']}{allocated_shard}")
-
-    response = sqs.receive_message(
-        QueueUrl=response["QueueUrl"],
-        MaxNumberOfMessages=1
+    response = sqs.get_queue_url(
+        QueueName=f"{environment_config['QUEUE_PREFIX']}{allocated_shard}"
     )
+
+    response = sqs.receive_message(QueueUrl=response["QueueUrl"], MaxNumberOfMessages=1)
 
     messages = response.get("Messages", [])
 
