@@ -1,5 +1,5 @@
-# emojirades-auth
-OAuth Server for the Emojirades slackbot
+# emojirades-onboarding
+Emojirades Slack Bot onboarding service, manages the OAuth flow with Slack to obtain workspace secrets.
 
 ## Usage
 Works over CLI or through AWS Lambda
