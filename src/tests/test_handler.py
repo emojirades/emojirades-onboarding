@@ -154,7 +154,9 @@ def test_onboard():
 
     with patch("handler.requests.post") as patched:
         patched.return_value = FakeSlackResponse()
-        response = handler.onboard(code, state_key)
+
+        # Kick off the onboard 30 seconds later (within the 60 second TTL)
+        response = handler.onboard(code, state_key, epoch_seconds + 30)
 
     # Validate the response
     assert not response["isBase64Encoded"]
@@ -174,14 +176,6 @@ def test_onboard():
     body = json.load(response["Body"])
 
     assert body["workspace_id"] == slack_data["team_id"]
-    assert (
-        body["score_file"]
-        == f"s3://{bucket_name}/workspaces/directory/{slack_data['team_id']}/score.json"
-    )
-    assert (
-        body["state_file"]
-        == f"s3://{bucket_name}/workspaces/directory/{slack_data['team_id']}/state.json"
-    )
     assert (
         body["auth_file"]
         == f"s3://{bucket_name}/workspaces/directory/{slack_data['team_id']}/auth.json"
