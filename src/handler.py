@@ -30,14 +30,8 @@ base_access_url = os.environ.get(
 state_ttl_delta = int(os.environ.get("STATE_TTL_DELTA", "300"))
 
 shards_dir = os.environ.get("SHARDS_DIR", "workspaces/shards")
-shards_dir_format = re.compile(f"{re.escape(shards_dir)}\/(?P<shard>[0-9]+)\/.+")
+shards_dir_format = re.compile(fr"{re.escape(shards_dir)}\/(?P<shard>[0-9]+)\/.+")
 
-score_file_key = os.environ.get(
-    "AUTH_BUCKET_KEY", "workspaces/directory/{workspace_id}/score.json"
-)
-state_file_key = os.environ.get(
-    "AUTH_BUCKET_KEY", "workspaces/directory/{workspace_id}/state.json"
-)
 auth_file_key = os.environ.get(
     "AUTH_BUCKET_KEY", "workspaces/directory/{workspace_id}/auth.json"
 )
@@ -124,7 +118,7 @@ def initiate(epoch_seconds):
     )
 
 
-def onboard(code, state_key):
+def onboard(code, state_key, epoch_seconds):
     dynamo = boto3.client("dynamodb")
     sqs = boto3.client("sqs")
     s3 = boto3.client("s3")
@@ -140,7 +134,17 @@ def onboard(code, state_key):
 
     if "Item" not in response:
         return build_message_response(
-            "Onboarding flow has timed out, please authenticate again", status_code=400
+            "Onboarding flow has timed out, please authenticate again",
+            status_code=400,
+        )
+
+    # Verify that the item's TTL has not expired
+    ttl = float(response["Item"]["StateTTL"]["N"])
+
+    if epoch_seconds > ttl:
+        return build_message_response(
+            "Onboarding flow has timed out, please authenticate again",
+            status_code=400,
         )
 
     slack_config = get_slack_config(secret_name)
@@ -226,15 +230,11 @@ def onboard(code, state_key):
             "Emojirades is currently oversubscribed, please try again later, sorry!"
         )
 
-    workspace_score_file_key = score_file_key.format(workspace_id=workspace_id)
-    workspace_state_file_key = state_file_key.format(workspace_id=workspace_id)
     workspace_auth_file_key = auth_file_key.format(workspace_id=workspace_id)
 
     # Allocate this workspace to the shard
     workspace_config = {
         "workspace_id": workspace_id,
-        "score_file": f"s3://{config_bucket}/{workspace_score_file_key}",
-        "state_file": f"s3://{config_bucket}/{workspace_state_file_key}",
         "auth_file": f"s3://{config_bucket}/{workspace_auth_file_key}",
     }
 
@@ -273,10 +273,9 @@ def onboard(code, state_key):
 
 def lambda_handler(event, context):
     path = event["requestContext"]["http"]["path"]
+    epoch_seconds = event["requestContext"]["timeEpoch"] / 1000
 
     if path == "/initiate":
-        epoch_seconds = event["requestContext"]["timeEpoch"] / 1000
-
         return initiate(epoch_seconds=epoch_seconds)
     elif path == "/onboard":
         parameters = event.get("queryStringParameters")
@@ -290,7 +289,7 @@ def lambda_handler(event, context):
         if code is None or state is None:
             return build_message_response("Missing code or state parameters")
 
-        return onboard(code, state)
+        return onboard(code, state, epoch_seconds)
     else:
         return build_redirect_response("https://emojirades.io")
 
