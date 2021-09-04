@@ -1,4 +1,4 @@
 moto[dynamodb2,sqs,s3,secretsmanager]==2.2.4
 boto3==1.18.32
-pytest==6.2.4
+pytest==6.2.5
 black==21.8b0
