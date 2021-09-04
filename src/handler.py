@@ -235,7 +235,7 @@ def onboard(code, state_key, epoch_seconds):
     # Allocate this workspace to the shard
     workspace_config = {
         "workspace_id": workspace_id,
-        "auth_file": f"s3://{config_bucket}/{workspace_auth_file_key}",
+        "auth_uri": f"s3://{config_bucket}/{workspace_auth_file_key}",
     }
 
     s3.put_object(
