@@ -177,7 +177,7 @@ def test_onboard():
 
     assert body["workspace_id"] == slack_data["team_id"]
     assert (
-        body["auth_file"]
+        body["auth_uri"]
         == f"s3://{bucket_name}/workspaces/directory/{slack_data['team_id']}/auth.json"
     )
 
