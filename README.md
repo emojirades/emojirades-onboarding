@@ -17,9 +17,10 @@ cd src; pytest
 docker build -t emojirades_onboarding:latest .
 
 # Copy the package out to your system
-docker run -v "${PWD}/release:/opt/mount" --rm --entrypoint cp emojirades_onboarding:latest /src/function.zip /opt/mount/
+docker run -v "${PWD}/release:/opt/mount" --rm --entrypoint cp emojirades_onboarding:latest /src/function.zip /opt/mount/onboarding-service-$(date +%Y-%m-%d).zip
 
 # Copy the package into S3 or similar to run
+aws s3 cp release/onboarding-service-$(date +%Y-%m-%d).zip s3://bucket/path/to/function.zip
 ```
 
 
