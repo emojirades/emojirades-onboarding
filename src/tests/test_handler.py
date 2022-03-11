@@ -55,6 +55,14 @@ def setup_environment(state_key=None, state_ttl=None):
                 "KeyType": "HASH",
             },
         ],
+        BillingMode="PROVISIONED",
+        ProvisionedThroughput={
+            "ReadCapacityUnits": 1,
+            "WriteCapacityUnits": 1,
+        },
+        StreamSpecification={
+            "StreamEnabled": False,
+        },
     )
     dynamo.update_time_to_live(
         TableName=state_table,
