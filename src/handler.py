@@ -30,7 +30,7 @@ base_access_url = os.environ.get(
 state_ttl_delta = int(os.environ.get("STATE_TTL_DELTA", "300"))
 
 shards_dir = os.environ.get("SHARDS_DIR", "workspaces/shards")
-shards_dir_format = re.compile(fr"{re.escape(shards_dir)}\/(?P<shard>[0-9]+)\/.+")
+shards_dir_format = re.compile(rf"{re.escape(shards_dir)}\/(?P<shard>[0-9]+)\/.+")
 
 auth_file_key = os.environ.get(
     "AUTH_BUCKET_KEY", "workspaces/directory/{workspace_id}/auth.json"
