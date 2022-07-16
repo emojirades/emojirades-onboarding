@@ -5,7 +5,7 @@
     ":disableDependencyDashboard",
     "schedule:weekends",
     "group:allNonMajor"
-  ]
+  ],
   "assignees": ["@emojirades/platform"],
   "pip_requirements": {
     "fileMatch": ["requirements-dev.txt"]
