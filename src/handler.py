@@ -91,12 +91,16 @@ def build_message_response(message, **kwargs):
 
 
 def initiate(epoch_seconds):
+    """
+    Creates a redirect response including a persisted state key.
+    The state key is used to validate the callback is from us and not someone else.
+    """
     dynamo = boto3.client("dynamodb")
 
     state_key = str(uuid.uuid4())
     state_ttl = str(epoch_seconds + state_ttl_delta)
 
-    response = dynamo.put_item(
+    dynamo.put_item(
         TableName=state_table,
         Item={
             "StateKey": {"S": state_key},
@@ -119,6 +123,9 @@ def initiate(epoch_seconds):
 
 
 def onboard(code, state_key, epoch_seconds):
+    """
+    Callback from Slack API containing the code to swap for Slack API tokens
+    """
     dynamo = boto3.client("dynamodb")
     sqs = boto3.client("sqs")
     s3 = boto3.client("s3")
@@ -141,7 +148,7 @@ def onboard(code, state_key, epoch_seconds):
     # Verify that the item's TTL has not expired
     ttl = float(response["Item"]["StateTTL"]["N"])
 
-    if epoch_seconds > ttl:
+    if not ttl or epoch_seconds > ttl:
         return build_message_response(
             "Onboarding flow has timed out, please authenticate again",
             status_code=400,
@@ -160,7 +167,7 @@ def onboard(code, state_key, epoch_seconds):
     )
 
     # Remove our state_key to stop any replays
-    # Once the 'post' is sent, the code is considered invalid
+    # Once the code has been used, is considered invalid
     dynamo.delete_item(
         TableName=state_table,
         Key={
@@ -238,12 +245,17 @@ def onboard(code, state_key, epoch_seconds):
         "auth_uri": f"s3://{config_bucket}/{workspace_auth_file_key}",
     }
 
-    s3.put_object(
+    response = s3.put_object(
         Body=json.dumps(workspace_config),
         Bucket=config_bucket,
         ContentType="application/json",
         Key=f"{shards_dir}/{allocated_shard}/{workspace_id}.json",
     )
+
+    if response.response_code != 200:
+        return build_message_response(
+            "Failed to allocate shard correctly, please contact support.""
+        )
 
     # Persist auth tokens to S3
     auth_document = {
@@ -252,23 +264,33 @@ def onboard(code, state_key, epoch_seconds):
         "bot_access_token": output["bot"]["bot_access_token"],
     }
 
-    s3.put_object(
+    response = s3.put_object(
         Body=json.dumps(auth_document),
         Bucket=config_bucket,
         ContentType="application/json",
         Key=auth_file_key.format(workspace_id=workspace_id),
     )
 
+    if response.response_code != 200:
+        return build_message_response(
+            "Failed to allocate shard correctly, please contact support.""
+        )
+
     # Submit SQS event for game bot(s) to reconfigure
     response = sqs.get_queue_url(QueueName=f"{queue_prefix}{allocated_shard}")
 
-    sqs.send_message(
+    response = sqs.send_message(
         QueueUrl=response["QueueUrl"],
         MessageBody=json.dumps({"workspace_id": workspace_id}),
     )
 
+    if response.response_code != 200:
+        return build_message_response(
+            "Please contact support letting them know '{team_name}' failed to reconfigure."
+        )
+
     # Let the user know they're good to go
-    return build_message_response(f"Successfully onboarded {team_name} to Emojirades!")
+    return build_message_response(f"Successfully onboarded '{team_name}' to Emojirades, please review the onboarding documentation.")
 
 
 def lambda_handler(event, context):
@@ -295,7 +317,25 @@ def lambda_handler(event, context):
 
 
 def cli_handler():
-    pass
+    parser = ArgumentParser()
+    parser.add_argument("-p", "--path", choices=("/initiate", "/onboard"), help="URL Path that would have been called")
+    parser.add_argument("-t", "--epoch-milliseconds", type=int, help="Timestamp in epoch milliseconds")
+    parser.add_argument("-q", "--query-params", help="JSON dict of query string params to pass into the /onboard path")
+    args = parser.parse_arguments()
+
+    event = {
+        "requestContext": {
+            "http": {
+                "path": args.path,
+            },
+            "timeEpoch": args.epoch_milliseconds,
+        },
+    }
+
+    if args.query_params:
+        event["queryStringParameters"] = json.loads(args.query_params)
+
+    return lambda_handler(event, {})
 
 
 if __name__ == "__main__":

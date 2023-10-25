@@ -105,9 +105,10 @@ def test_initiate():
 
     import handler
 
+    # Create a state item
     response = handler.initiate(epoch_seconds)
 
-    # Get the state item handler created
+    # Get the state item from persistence
     dynamo = boto3.client("dynamodb")
     items = dynamo.scan(TableName=state_table).get("Items", [])
     assert len(items) == 1
