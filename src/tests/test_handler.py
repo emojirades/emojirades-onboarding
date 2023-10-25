@@ -173,7 +173,7 @@ def test_onboard():
     assert response["headers"]["Content-Type"] == "application/json"
     assert (
         response["body"]
-        == f'{{"message": "Successfully onboarded '{slack_data["team_name"]}' to Emojirades, please review the onboarding documentation."}}'
+        == f'{{"message": "Successfully onboarded \'{slack_data["team_name"]}\' to Emojirades, please review the onboarding documentation."}}'
     )
 
     # Validate team was allocated to the correct shard
