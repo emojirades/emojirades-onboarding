@@ -254,7 +254,7 @@ def onboard(code, state_key, epoch_seconds):
         )
     except Exception:
         return build_message_response(
-            f"Please contact support letting them know '{team_name}' failued to write workspace.
+            f"Please contact support letting them know '{team_name}' failued to write workspace."
         )
 
     # Persist auth tokens to S3
