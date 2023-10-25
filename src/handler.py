@@ -245,16 +245,16 @@ def onboard(code, state_key, epoch_seconds):
         "auth_uri": f"s3://{config_bucket}/{workspace_auth_file_key}",
     }
 
-    response = s3.put_object(
-        Body=json.dumps(workspace_config),
-        Bucket=config_bucket,
-        ContentType="application/json",
-        Key=f"{shards_dir}/{allocated_shard}/{workspace_id}.json",
-    )
-
-    if response.response_code != 200:
+    try:
+        s3.put_object(
+            Body=json.dumps(workspace_config),
+            Bucket=config_bucket,
+            ContentType="application/json",
+            Key=f"{shards_dir}/{allocated_shard}/{workspace_id}.json",
+        )
+    except Exception:
         return build_message_response(
-            "Failed to allocate shard correctly, please contact support."
+            f"Please contact support letting them know '{team_name}' failued to write workspace.
         )
 
     # Persist auth tokens to S3
@@ -264,29 +264,29 @@ def onboard(code, state_key, epoch_seconds):
         "bot_access_token": output["bot"]["bot_access_token"],
     }
 
-    response = s3.put_object(
-        Body=json.dumps(auth_document),
-        Bucket=config_bucket,
-        ContentType="application/json",
-        Key=auth_file_key.format(workspace_id=workspace_id),
-    )
-
-    if response.response_code != 200:
+    try:
+        s3.put_object(
+            Body=json.dumps(auth_document),
+            Bucket=config_bucket,
+            ContentType="application/json",
+            Key=auth_file_key.format(workspace_id=workspace_id),
+        )
+    except Exception:
         return build_message_response(
-            "Failed to allocate shard correctly, please contact support."
+            f"Please contact support letting them know '{team_name}' failed to write auth."
         )
 
     # Submit SQS event for game bot(s) to reconfigure
     response = sqs.get_queue_url(QueueName=f"{queue_prefix}{allocated_shard}")
 
-    response = sqs.send_message(
-        QueueUrl=response["QueueUrl"],
-        MessageBody=json.dumps({"workspace_id": workspace_id}),
-    )
-
-    if response.response_code != 200:
+    try:
+        sqs.send_message(
+            QueueUrl=response["QueueUrl"],
+            MessageBody=json.dumps({"workspace_id": workspace_id}),
+        )
+    except Exception:
         return build_message_response(
-            "Please contact support letting them know '{team_name}' failed to reconfigure."
+            f"Please contact support letting them know '{team_name}' failed to reconfigure."
         )
 
     # Let the user know they're good to go
