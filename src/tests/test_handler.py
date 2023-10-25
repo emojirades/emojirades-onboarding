@@ -105,9 +105,10 @@ def test_initiate():
 
     import handler
 
+    # Create a state item
     response = handler.initiate(epoch_seconds)
 
-    # Get the state item handler created
+    # Get the state item from persistence
     dynamo = boto3.client("dynamodb")
     items = dynamo.scan(TableName=state_table).get("Items", [])
     assert len(items) == 1
@@ -172,7 +173,7 @@ def test_onboard():
     assert response["headers"]["Content-Type"] == "application/json"
     assert (
         response["body"]
-        == f'{{"message": "Successfully onboarded {slack_data["team_name"]} to Emojirades!"}}'
+        == f'{{"message": "Successfully onboarded \'{slack_data["team_name"]}\' to Emojirades, please review the onboarding documentation."}}'
     )
 
     # Validate team was allocated to the correct shard
