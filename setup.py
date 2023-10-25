@@ -25,7 +25,7 @@ setup(
     install_requires=[
         "requests",
     ],
-    python_requires="~=3.12",
+    python_requires="~=3.10",  # Minimum supported version
     extras_require={
         "test": ["boto3", "pytest", "black"],
     },

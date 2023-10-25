@@ -5,7 +5,7 @@ import uuid
 import boto3
 import requests
 
-from moto import mock_dynamodb2, mock_sqs, mock_s3, mock_secretsmanager
+from moto import mock_dynamodb, mock_sqs, mock_s3, mock_secretsmanager
 from unittest.mock import patch
 
 environment = "dev"
@@ -94,7 +94,7 @@ def setup_environment(state_key=None, state_ttl=None):
     sqs.create_queue(QueueName=alert_queue)
 
 
-@mock_dynamodb2
+@mock_dynamodb
 @mock_sqs
 @mock_s3
 @mock_secretsmanager
@@ -125,7 +125,7 @@ def test_initiate():
     assert response["headers"]["Referrer-Policy"] == "no-referrer"
 
 
-@mock_dynamodb2
+@mock_dynamodb
 @mock_sqs
 @mock_s3
 @mock_secretsmanager
