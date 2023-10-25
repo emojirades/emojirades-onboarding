@@ -254,7 +254,7 @@ def onboard(code, state_key, epoch_seconds):
 
     if response.response_code != 200:
         return build_message_response(
-            "Failed to allocate shard correctly, please contact support.""
+            "Failed to allocate shard correctly, please contact support."
         )
 
     # Persist auth tokens to S3
@@ -273,7 +273,7 @@ def onboard(code, state_key, epoch_seconds):
 
     if response.response_code != 200:
         return build_message_response(
-            "Failed to allocate shard correctly, please contact support.""
+            "Failed to allocate shard correctly, please contact support."
         )
 
     # Submit SQS event for game bot(s) to reconfigure
@@ -290,7 +290,9 @@ def onboard(code, state_key, epoch_seconds):
         )
 
     # Let the user know they're good to go
-    return build_message_response(f"Successfully onboarded '{team_name}' to Emojirades, please review the onboarding documentation.")
+    return build_message_response(
+        f"Successfully onboarded '{team_name}' to Emojirades, please review the onboarding documentation."
+    )
 
 
 def lambda_handler(event, context):
@@ -318,9 +320,20 @@ def lambda_handler(event, context):
 
 def cli_handler():
     parser = ArgumentParser()
-    parser.add_argument("-p", "--path", choices=("/initiate", "/onboard"), help="URL Path that would have been called")
-    parser.add_argument("-t", "--epoch-milliseconds", type=int, help="Timestamp in epoch milliseconds")
-    parser.add_argument("-q", "--query-params", help="JSON dict of query string params to pass into the /onboard path")
+    parser.add_argument(
+        "-p",
+        "--path",
+        choices=("/initiate", "/onboard"),
+        help="URL Path that would have been called",
+    )
+    parser.add_argument(
+        "-t", "--epoch-milliseconds", type=int, help="Timestamp in epoch milliseconds"
+    )
+    parser.add_argument(
+        "-q",
+        "--query-params",
+        help="JSON dict of query string params to pass into the /onboard path",
+    )
     args = parser.parse_arguments()
 
     event = {
