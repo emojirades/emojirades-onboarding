@@ -5,7 +5,7 @@ on: push
 
 jobs:
   linter:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -25,7 +25,7 @@ jobs:
       conclusion: ${{ steps.black.conclusion }}
 
   pytest:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     needs: linter
     if: ${{ needs.linter.outputs.conclusion == 'success' }}
