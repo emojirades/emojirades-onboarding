@@ -5,7 +5,8 @@ import uuid
 import boto3
 import requests
 
-from moto import mock_dynamodb, mock_sqs, mock_s3, mock_secretsmanager
+from moto import mock_aws
+
 from unittest.mock import patch
 
 environment = "dev"
@@ -37,6 +38,7 @@ environment_config = {
 }
 
 
+@mock_aws
 def setup_environment(state_key=None, state_ttl=None):
     os.environ.update(environment_config)
 
@@ -94,10 +96,7 @@ def setup_environment(state_key=None, state_ttl=None):
     sqs.create_queue(QueueName=alert_queue)
 
 
-@mock_dynamodb
-@mock_sqs
-@mock_s3
-@mock_secretsmanager
+@mock_aws
 def test_initiate():
     setup_environment()
 
@@ -126,10 +125,7 @@ def test_initiate():
     assert response["headers"]["Referrer-Policy"] == "no-referrer"
 
 
-@mock_dynamodb
-@mock_sqs
-@mock_s3
-@mock_secretsmanager
+@mock_aws
 def test_onboard():
     state_key = str(uuid.uuid4())
     epoch_seconds = int(time.time())
