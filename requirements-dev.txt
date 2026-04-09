@@ -1,4 +1,4 @@
-moto[dynamodb,sqs,s3,secretsmanager]==4.2.14
+moto[dynamodb,sqs,s3,secretsmanager]==5.1.22
 boto3==1.42.87
 pytest==9.0.3
 black==25.12.0
