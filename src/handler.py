@@ -12,7 +12,6 @@ import uuid
 import os
 import re
 
-
 # Required env vars
 environment = os.environ["ENVIRONMENT"]
 secret_name = os.environ["SECRET_NAME"]
